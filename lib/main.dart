@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
+import 'package:camera_features/wigets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 
 // Utilities
 void _logError(String code, String? message) {
@@ -42,10 +44,185 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
     with WidgetsBindingObserver {
   CameraController? controller;
   bool enableAudio = true;
+  final barcodeScanner = BarcodeScanner(formats: [BarcodeFormat.all]);
+
+  // This is a crucial conversion function
+  InputImage? _inputImageFromCameraImage(CameraImage image) {
+    final Uint8List nv21Bytes = convertYUV420toNV21(image)!;
+    if (kDebugMode) {
+      print('---------------------$nv21Bytes-----------------------');
+      print(
+        '---------------------${nv21Bytes.lengthInBytes}-----------------------',
+      );
+    }
+
+    final camera = controller!.description;
+    final sensorOrientation = camera.sensorOrientation;
+
+    // Get image rotation
+    // This is calculated based on the device orientation and sensor orientation
+    // For most devices, this will be 90.
+    final rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+    if (rotation == null) return null;
+    if (kDebugMode) {
+      print(
+        '---------------------started changing the format-----------------------',
+      );
+    }
+    for (var item in image.planes) {
+      if (kDebugMode) {
+        print('---------------------${item.bytes}-----------------------');
+      }
+    }
+    if (kDebugMode) {
+      print(
+        '---------------------${controller!.imageFormatGroup!.name}-----------------------',
+      );
+    }
+    if (kDebugMode) {
+      print('---------------------${image.format.raw}-----------------------');
+      print(
+        '---------------------${image.format.group}-----------------------',
+      );
+    }
+    // Get image format
+    final format = InputImageFormatValue.fromRawValue(17); //image.format.raw);
+    if (format == null) return null;
+
+    // Create InputImage from bytes
+    return InputImage.fromBytes(
+      bytes: nv21Bytes,
+      metadata: InputImageMetadata(
+        size: Size(image.width.toDouble(), image.height.toDouble()),
+        rotation: rotation,
+        format: format,
+        bytesPerRow: nv21Bytes.lengthInBytes,
+      ),
+    );
+  }
+
+  scan(CameraImage image) async {
+    if (kDebugMode) {
+      print(
+        '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
+      );
+    }
+    if (kDebugMode) {
+      print('---------------------${image.format.raw}-----------------------');
+      print(
+        '---------------------${image.format.group}-----------------------',
+      );
+    }
+    final inputImage = _inputImageFromCameraImage(image);
+    if (inputImage == null) return;
+    if (kDebugMode) {
+      print(
+        '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
+      );
+    }
+    final List<Barcode> barcodes = await barcodeScanner.processImage(
+      inputImage,
+    );
+
+    for (Barcode barcode in barcodes) {
+      final BarcodeType type = barcode.type;
+      final Rect boundingBox = barcode.boundingBox;
+      final String? displayValue = barcode.displayValue;
+      final String? rawValue = barcode.rawValue;
+      if (kDebugMode) {
+        print(
+          '------------------------$boundingBox, $displayValue, $rawValue--------------------------',
+        );
+      }
+
+      // See API reference for complete list of supported types
+      switch (type) {
+        case BarcodeType.wifi:
+          final barcodeWifi = barcode.value as BarcodeWifi;
+          if (kDebugMode) {
+            print(
+              '------------------------$barcodeWifi--------------------------',
+            );
+          }
+          break;
+        case BarcodeType.url:
+          final barcodeUrl = barcode.value as BarcodeUrl;
+          if (kDebugMode) {
+            print(
+              '------------------------$barcodeUrl--------------------------',
+            );
+          }
+          break;
+        case BarcodeType.unknown:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.contactInfo:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.email:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.isbn:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.phone:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.product:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.sms:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.text:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.geoCoordinates:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.calendarEvent:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+        case BarcodeType.driverLicense:
+          if (kDebugMode) {
+            print('driverLicense');
+          }
+          break;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    // 4. Dispose controllers to free up resources
+    controller?.dispose();
+    barcodeScanner.close();
+    super.dispose();
+  }
 
   // #docregion AppLifecycle
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
+  Future<void> didChangeAppLifecycleState(AppLifecycleState state) async {
     final CameraController? cameraController = controller;
 
     // App state changed before we got the chance to initialize.
@@ -59,6 +236,12 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
           '---------------------App life cycle is inactive-----------------------',
         );
       }
+      if (kDebugMode) {
+        print(
+          '---------------------image stream stoped-----------------------',
+        );
+      }
+      controller!.stopImageStream();
       cameraController.dispose();
     } else if (state == AppLifecycleState.resumed) {
       if (kDebugMode) {
@@ -66,7 +249,13 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
           '---------------------App life cycle is resumed-----------------------',
         );
       }
-      _initializeCameraController(cameraController.description);
+      await _initializeCameraController(cameraController.description);
+      if (kDebugMode) {
+        print(
+          '---------------------image stream started-----------------------',
+        );
+      }
+      controller!.startImageStream(scan);
     }
   }
   // #enddocregion AppLifecycle
@@ -160,18 +349,43 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
           '---------------------New camera selected-----------------------',
         );
       }
+      controller!.stopImageStream();
+      if (kDebugMode) {
+        print(
+          '---------------------image stream stoped-----------------------',
+        );
+      }
       controller!.setDescription(cameraDescription);
+
+      if (kDebugMode) {
+        print(
+          '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
+        );
+      }
+
+      controller!.startImageStream(scan);
+      if (kDebugMode) {
+        print(
+          '---------------------image stream started-----------------------',
+        );
+      }
     } else {
       if (kDebugMode) {
         print('---------------------Controller is null-----------------------');
       }
-      _initializeCameraController(cameraDescription);
-    }
+      await _initializeCameraController(cameraDescription);
+      if (kDebugMode) {
+        print(
+          '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
+        );
+      }
 
-    if (kDebugMode) {
-      print(
-        '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
-      );
+      controller!.startImageStream(scan);
+      if (kDebugMode) {
+        print(
+          '---------------------image stream started-----------------------',
+        );
+      }
     }
   }
 
@@ -180,9 +394,12 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
   ) async {
     final CameraController cameraController = CameraController(
       cameraDescription,
-      ResolutionPreset.max,
+      ResolutionPreset.low,
       enableAudio: enableAudio,
-      imageFormatGroup: ImageFormatGroup.nv21,
+      imageFormatGroup: defaultTargetPlatform == TargetPlatform.android
+          ? ImageFormatGroup
+                .nv21 // Good for Android processing
+          : ImageFormatGroup.bgra8888,
     );
     if (kDebugMode) {
       print(
