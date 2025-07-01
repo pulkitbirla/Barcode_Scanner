@@ -1,33 +1,13 @@
 import 'dart:async';
 
 import 'package:camera/camera.dart';
-import 'package:camera_features/wigets.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 
-// Utilities
-void _logError(String code, String? message) {
-  // ignore: avoid_print
-  print('Error: $code${message == null ? '' : '\nError Message: $message'}');
-}
-
-/// Returns a suitable camera icon for [direction].
-IconData getCameraLensIcon(CameraLensDirection direction) {
-  switch (direction) {
-    case CameraLensDirection.back:
-      return Icons.camera_rear;
-    case CameraLensDirection.front:
-      return Icons.camera_front;
-    case CameraLensDirection.external:
-      return Icons.camera;
-  }
-  // This enum is from a different package, so a new value could be added at
-  // any time. The example should keep working if that happens.
-  // ignore: dead_code
-  return Icons.camera;
-}
+import 'devdoot.dart';
+import 'image_conversion.dart';
 
 /// Camera example home widget.
 class CameraExampleHome extends StatefulWidget {
@@ -44,82 +24,13 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
     with WidgetsBindingObserver {
   CameraController? controller;
   bool enableAudio = true;
+  bool isStreaming = false;
   final barcodeScanner = BarcodeScanner(formats: [BarcodeFormat.all]);
 
-  // This is a crucial conversion function
-  InputImage? _inputImageFromCameraImage(CameraImage image) {
-    final Uint8List nv21Bytes = convertYUV420toNV21(image)!;
-    if (kDebugMode) {
-      print('---------------------$nv21Bytes-----------------------');
-      print(
-        '---------------------${nv21Bytes.lengthInBytes}-----------------------',
-      );
-    }
-
-    final camera = controller!.description;
-    final sensorOrientation = camera.sensorOrientation;
-
-    // Get image rotation
-    // This is calculated based on the device orientation and sensor orientation
-    // For most devices, this will be 90.
-    final rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
-    if (rotation == null) return null;
-    if (kDebugMode) {
-      print(
-        '---------------------started changing the format-----------------------',
-      );
-    }
-    for (var item in image.planes) {
-      if (kDebugMode) {
-        print('---------------------${item.bytes}-----------------------');
-      }
-    }
-    if (kDebugMode) {
-      print(
-        '---------------------${controller!.imageFormatGroup!.name}-----------------------',
-      );
-    }
-    if (kDebugMode) {
-      print('---------------------${image.format.raw}-----------------------');
-      print(
-        '---------------------${image.format.group}-----------------------',
-      );
-    }
-    // Get image format
-    final format = InputImageFormatValue.fromRawValue(17); //image.format.raw);
-    if (format == null) return null;
-
-    // Create InputImage from bytes
-    return InputImage.fromBytes(
-      bytes: nv21Bytes,
-      metadata: InputImageMetadata(
-        size: Size(image.width.toDouble(), image.height.toDouble()),
-        rotation: rotation,
-        format: format,
-        bytesPerRow: nv21Bytes.lengthInBytes,
-      ),
-    );
-  }
-
   scan(CameraImage image) async {
-    if (kDebugMode) {
-      print(
-        '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
-      );
-    }
-    if (kDebugMode) {
-      print('---------------------${image.format.raw}-----------------------');
-      print(
-        '---------------------${image.format.group}-----------------------',
-      );
-    }
-    final inputImage = _inputImageFromCameraImage(image);
+    final inputImage = inputImageFromCameraImage(image, controller);
     if (inputImage == null) return;
-    if (kDebugMode) {
-      print(
-        '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
-      );
-    }
+
     final List<Barcode> barcodes = await barcodeScanner.processImage(
       inputImage,
     );
@@ -139,74 +50,119 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
       switch (type) {
         case BarcodeType.wifi:
           final barcodeWifi = barcode.value as BarcodeWifi;
-          if (kDebugMode) {
-            print(
-              '------------------------$barcodeWifi--------------------------',
-            );
-          }
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            'Wifi\', \'SSID: ${barcodeWifi.ssid}',
+            'Password: ${barcodeWifi.password}\'\n\'Encryption type: ${barcodeWifi.encryptionType}',
+            context,
+          );
+
           break;
         case BarcodeType.url:
           final barcodeUrl = barcode.value as BarcodeUrl;
-          if (kDebugMode) {
-            print(
-              '------------------------$barcodeUrl--------------------------',
-            );
-          }
-          break;
-        case BarcodeType.unknown:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(barcodeUrl.title!, barcodeUrl.url!, context);
+
           break;
         case BarcodeType.contactInfo:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeContact = barcode.value as BarcodeContactInfo;
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            'Contact Info',
+            'Name : ${barcodeContact.firstName} ${barcodeContact.middleName}  ${barcodeContact.lastName}\nAddress: ${barcodeContact.addresses}\nEmail: ${barcodeContact.emails}\nPhone: ${barcodeContact.phoneNumbers}\nOrganization: ${barcodeContact.organizationName}\'',
+            context,
+          );
           break;
         case BarcodeType.email:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeEmail = barcode.value as BarcodeEmail;
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            barcodeEmail.type.toString(),
+            'Subject: ${barcodeEmail.subject}\nBody: ${barcodeEmail.body}\nAddress: ${barcodeEmail.address}',
+            context,
+          );
           break;
         case BarcodeType.isbn:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeIsbn = barcode.value.toString();
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog('Contact Isbn', 'ISBN: $barcodeIsbn', context);
           break;
         case BarcodeType.phone:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodePhone = barcode.value as BarcodePhone;
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            barcodePhone.type as String,
+            barcodePhone.number!,
+            context,
+          );
           break;
         case BarcodeType.product:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeProduct = barcode.value.toString();
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            'Product Details',
+            'Details: $barcodeProduct',
+            context,
+          );
           break;
         case BarcodeType.sms:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeSms = barcode.value as BarcodeSMS;
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            barcodeSms.phoneNumber!,
+            barcodeSms.message!,
+            context,
+          );
           break;
         case BarcodeType.text:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeText = barcode.value.toString();
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog('Text type barcode', barcodeText, context);
           break;
         case BarcodeType.geoCoordinates:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeGC = barcode.value as BarcodeGeoPoint;
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            '$barcodeGC',
+            'latitude: ${barcodeGC.latitude.toString()}, longitude: ${barcodeGC.longitude.toString()} ',
+            context,
+          );
           break;
         case BarcodeType.calendarEvent:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeCalenderEvent = barcode.value as BarcodeCalenderEvent;
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            barcodeCalenderEvent.organizer!,
+            'Description: ${barcodeCalenderEvent.description}\n Start time: ${barcodeCalenderEvent.start}\n End time: ${barcodeCalenderEvent.end}\n Location: ${barcodeCalenderEvent.location}\n Status: ${barcodeCalenderEvent.status}\n Summary: ${barcodeCalenderEvent.summary}',
+            context,
+          );
           break;
         case BarcodeType.driverLicense:
-          if (kDebugMode) {
-            print('driverLicense');
-          }
+          final barcodeDL = barcode.value as BarcodeDriverLicense;
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog('Driving License', 'Details: $barcodeDL', context);
+          break;
+        case BarcodeType.unknown:
+          final barcodeUnknown = barcode.value.toString();
+          isStreaming = false;
+          await controller!.stopImageStream();
+          showAlertDialog(
+            'Unknown type barcode',
+            'Content: $barcodeUnknown',
+            context,
+          );
           break;
       }
     }
@@ -231,30 +187,14 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
     }
 
     if (state == AppLifecycleState.inactive) {
-      if (kDebugMode) {
-        print(
-          '---------------------App life cycle is inactive-----------------------',
-        );
+      if (isStreaming == true) {
+        isStreaming = false;
+        controller!.stopImageStream();
       }
-      if (kDebugMode) {
-        print(
-          '---------------------image stream stoped-----------------------',
-        );
-      }
-      controller!.stopImageStream();
       cameraController.dispose();
     } else if (state == AppLifecycleState.resumed) {
-      if (kDebugMode) {
-        print(
-          '---------------------App life cycle is resumed-----------------------',
-        );
-      }
       await _initializeCameraController(cameraController.description);
-      if (kDebugMode) {
-        print(
-          '---------------------image stream started-----------------------',
-        );
-      }
+      isStreaming = true;
       controller!.startImageStream(scan);
     }
   }
@@ -262,23 +202,33 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Column(
-        children: <Widget>[
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(color: Colors.black),
-              child: Padding(
-                padding: const EdgeInsets.all(1.0),
-                child: Center(child: _cameraPreviewWidget()),
+    return SafeArea(
+      child: Scaffold(
+        body: Column(
+          children: <Widget>[
+            Expanded(
+              child: Container(
+                decoration: BoxDecoration(color: Colors.black),
+                child: Padding(
+                  padding: const EdgeInsets.all(1.0),
+                  child: Center(child: _cameraPreviewWidget()),
+                ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(5.0),
-            child: _cameraTogglesRowWidget(),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.all(5.0),
+              child: _cameraTogglesRowWidget(),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (controller != null && !isStreaming) {
+                  controller!.startImageStream(scan);
+                }
+              },
+              child: Text('Scan'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -314,7 +264,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
 
     if (_cameras.isEmpty) {
       SchedulerBinding.instance.addPostFrameCallback((_) async {
-        showInSnackBar('No camera found.');
+        showInSnackBar('No camera found.', context);
       });
       return const Text('None');
     } else {
@@ -336,56 +286,20 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
     return Row(children: toggles);
   }
 
-  void showInSnackBar(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
   Future<void> onNewCameraSelected(CameraDescription cameraDescription) async {
     if (controller != null) {
-      if (kDebugMode) {
-        print(
-          '---------------------New camera selected-----------------------',
-        );
-      }
-      controller!.stopImageStream();
-      if (kDebugMode) {
-        print(
-          '---------------------image stream stoped-----------------------',
-        );
-      }
-      controller!.setDescription(cameraDescription);
-
-      if (kDebugMode) {
-        print(
-          '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
-        );
+      if (isStreaming == true) {
+        isStreaming = false;
+        await controller!.stopImageStream();
       }
 
+      await controller!.setDescription(cameraDescription);
+      isStreaming = true;
       controller!.startImageStream(scan);
-      if (kDebugMode) {
-        print(
-          '---------------------image stream started-----------------------',
-        );
-      }
     } else {
-      if (kDebugMode) {
-        print('---------------------Controller is null-----------------------');
-      }
       await _initializeCameraController(cameraDescription);
-      if (kDebugMode) {
-        print(
-          '---------------------image format group: ${controller!.imageFormatGroup}-----------------------',
-        );
-      }
-
+      isStreaming = true;
       controller!.startImageStream(scan);
-      if (kDebugMode) {
-        print(
-          '---------------------image stream started-----------------------',
-        );
-      }
     }
   }
 
@@ -401,17 +315,7 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
                 .nv21 // Good for Android processing
           : ImageFormatGroup.bgra8888,
     );
-    if (kDebugMode) {
-      print(
-        '---------------------Initializing camera controller-----------------------',
-      );
-    }
 
-    if (kDebugMode) {
-      print(
-        '---------------------image format group: ${cameraController.imageFormatGroup}-----------------------',
-      );
-    }
     controller = cameraController;
 
     // If the controller is updated then update the UI.
@@ -422,46 +326,45 @@ class _CameraExampleHomeState extends State<CameraExampleHome>
       if (cameraController.value.hasError) {
         showInSnackBar(
           'Camera error ${cameraController.value.errorDescription}',
+          context,
         );
       }
     });
 
     try {
       await cameraController.initialize();
-      if (kDebugMode) {
-        print('---------------------Camera initialized-----------------------');
-      }
     } on CameraException catch (e) {
       switch (e.code) {
         case 'CameraAccessDenied':
-          showInSnackBar('You have denied camera access.');
+          showInSnackBar('You have denied camera access.', context);
         case 'CameraAccessDeniedWithoutPrompt':
           // iOS only
-          showInSnackBar('Please go to Settings app to enable camera access.');
+          showInSnackBar(
+            'Please go to Settings app to enable camera access.',
+            context,
+          );
         case 'CameraAccessRestricted':
           // iOS only
-          showInSnackBar('Camera access is restricted.');
+          showInSnackBar('Camera access is restricted.', context);
         case 'AudioAccessDenied':
-          showInSnackBar('You have denied audio access.');
+          showInSnackBar('You have denied audio access.', context);
         case 'AudioAccessDeniedWithoutPrompt':
           // iOS only
-          showInSnackBar('Please go to Settings app to enable audio access.');
+          showInSnackBar(
+            'Please go to Settings app to enable audio access.',
+            context,
+          );
         case 'AudioAccessRestricted':
           // iOS only
-          showInSnackBar('Audio access is restricted.');
+          showInSnackBar('Audio access is restricted.', context);
         default:
-          _showCameraException(e);
+          showCameraException(e, context);
       }
     }
 
     if (mounted) {
       setState(() {});
     }
-  }
-
-  void _showCameraException(CameraException e) {
-    _logError(e.code, e.description);
-    showInSnackBar('Error: ${e.code}\n${e.description}');
   }
 }
 
@@ -484,7 +387,7 @@ Future<void> main() async {
     WidgetsFlutterBinding.ensureInitialized();
     _cameras = await availableCameras();
   } on CameraException catch (e) {
-    _logError(e.code, e.description);
+    logError(e.code, e.description);
   }
   runApp(const CameraApp());
 }

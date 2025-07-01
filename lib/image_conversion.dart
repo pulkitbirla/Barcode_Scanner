@@ -1,6 +1,8 @@
-import 'dart:typed_data';
+import 'dart:ui';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_mlkit_barcode_scanning/google_mlkit_barcode_scanning.dart';
 
 /// Converts a [CameraImage] from `yuv420` format to `NV21` format.
 ///
@@ -51,9 +53,6 @@ Uint8List? convertYUV420toNV21(CameraImage cameraImage) {
 
   final int uRowStride = uPlane.bytesPerRow;
   final int vRowStride = vPlane.bytesPerRow;
-
-  // *** THE FIX IS HERE ***
-  // Use bytesPerPixel instead of pixelStride.
   final int uBytesPerPixel = uPlane.bytesPerPixel!;
   final int vBytesPerPixel = vPlane.bytesPerPixel!;
 
@@ -75,4 +74,36 @@ Uint8List? convertYUV420toNV21(CameraImage cameraImage) {
   }
 
   return nv21Bytes;
+}
+
+// This is a crucial conversion function
+InputImage? inputImageFromCameraImage(
+  CameraImage image,
+  CameraController? controller,
+) {
+  final Uint8List nv21Bytes = convertYUV420toNV21(image)!;
+
+  final camera = controller!.description;
+  final sensorOrientation = camera.sensorOrientation;
+
+  // Get image rotation
+  // This is calculated based on the device orientation and sensor orientation
+  // For most devices, this will be 90.
+  final rotation = InputImageRotationValue.fromRawValue(sensorOrientation);
+  if (rotation == null) return null;
+
+  // Get image format
+  final format = InputImageFormatValue.fromRawValue(17); //image.format.raw);
+  if (format == null) return null;
+
+  // Create InputImage from bytes
+  return InputImage.fromBytes(
+    bytes: nv21Bytes,
+    metadata: InputImageMetadata(
+      size: Size(image.width.toDouble(), image.height.toDouble()),
+      rotation: rotation,
+      format: format,
+      bytesPerRow: nv21Bytes.lengthInBytes,
+    ),
+  );
 }
